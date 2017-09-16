@@ -2,7 +2,7 @@
 
 ## Running the Flask Application
 
-To run the flask app, open the command promt and navigate to the folder that holds the full application. Ensure that you have virtualenv installed on your computer using [these instructions](http://flask.pocoo.org/docs/0.11/installation/#installation).
+To run the flask app, open the command prompt and navigate to the folder that holds the full application. Ensure that you have virtualenv installed on your computer using [these instructions](http://flask.pocoo.org/docs/0.11/installation/#installation).
 
 In the command line, enter the following code to activate the virtual environment:
 
