@@ -1,10 +1,16 @@
+###########
+# Imports #
+###########
 from flask import Flask, render_template, jsonify, request, g, redirect, url_for
 from flask.ext.mysql import MySQL
 import os
 
+
+#########
+# Setup #
+#########
 app = Flask(__name__)
 
-# Get the proper config object
 if os.environ.get('TYPE') == 'production':
     app.config.from_object('config.ProductionConfig')
 else:
@@ -13,7 +19,19 @@ else:
 mysql = MySQL()
 mysql.init_app(app)
 
-def getDB():
+
+#############
+# Endpoints #
+#############
+@app.route("/")
+def home():
+    return "Hello World!"
+
+
+############
+# Database #
+############
+def get_db():
     """Opens a new database connection if there is none yet for the
     current application context.
     """
@@ -22,7 +40,7 @@ def getDB():
     
     return g.mysql_db
 
-def getCursor():
+def get_cursor():
     if not hasattr(g, 'mysql_db'):
         g.mysql_db = mysql.connect()
 
@@ -32,11 +50,7 @@ def getCursor():
     return g.cursor
 
 @app.teardown_appcontext
-def closeDB(error):
+def close_db(error):
     """Closes the database again at the end of the request."""
     if hasattr(g, 'mysql_db'):
         g.mysql_db.close()
-
-@app.route("/")
-def home():
-    return "Hello World!"
