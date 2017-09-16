@@ -27,6 +27,45 @@ mysql.init_app(app)
 def home():
     return "Hello World!"
 
+# email, password
+# returns user_id
+@app.route("register", methods=["POST"])
+def register():
+    success = True
+    """EXAMPLE SQL CODE
+    getCursor().execute("UPDATE `users` SET `username`=%s,`email`=%s",
+        [request.form.get('username'), request.form.get('email')])
+    getDB.commit()"""
+    return jsonify(success=success)
+
+# user_id, location
+# returns boolean
+@app.route("set-location", methods=["POST"])
+def set_location():
+    success = True
+    return jsonify(success=success)
+
+# user_id, city, min_duration, max_duration, min_price, max_price
+# returns boolean
+@app.route("add-bucket-list-item", methods=["POST"])
+def add_bucket_list_item():
+    success = True
+    return jsonify(success=success)
+
+# city, start_date, end_date
+# returns price
+@app.route("get-price", methods=["POST"])
+def get_price():
+    success = True
+    return jsonify(success=success)
+
+# user_id
+# returns list: city, start_date, end_date, price
+@app.route("get-bucket-list", methods=["POST"])
+def register():
+    success = True
+    return jsonify(success=success)
+
 
 ############
 # Database #
