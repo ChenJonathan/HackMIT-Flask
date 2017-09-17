@@ -4,6 +4,8 @@ class Config(object):
     MYSQL_DATABASE_DB = 'sql9194895'
     MYSQL_DATABASE_HOST = 'sql9.freemysqlhosting.net'
 
+    AMADEUS_KEY = 'Uaks7cNqc5iA9ECKqotOd4OjRcGz6RDW'
+
 # hackmit2017.pythonanywhere.com
 class ProductionConfig(Config):
     ENV = "Prod"
