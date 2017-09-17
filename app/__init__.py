@@ -86,13 +86,24 @@ def get_feed(user_id):
     for i in range(len(paired_results)):
         start_airport = get_airport_from_city(user_location)
         end_airport = get_airport_from_city(paired_results[i]['end_city'])
-        paired_results[i]['departure_flight'] = calculate_best_price(start_airport, 
+        if not end_airport:
+            continue
+
+        departure_flight = calculate_best_price(start_airport, 
             end_airport, paired_results[i]['start_date'], 
             subtract_trip_duration(paired_results[i]['end_date'], paired_results[i]['duration']))
+        if not departure_flight:
+            continue
+        paired_results[i]['departure_flight'] = departure_flight
+
         return_day = add_trip_duration(paired_results[i]['departure_flight']['departure_date'], 
             paired_results[i]['duration'])
-        paired_results[i]['return_flight'] = calculate_best_price(start_airport, 
+        return_flight = calculate_best_price(start_airport, 
             end_airport, return_day, return_day)
+        if not return_flight:
+            del paired_results[i]['departure_flight']
+            continue
+        paired_results[i]['return_flight'] = return_flight
     return jsonify(success=True, results=paired_results)
 
 @app.route("/user/<user_id>/bucket-item", methods=["POST"])
@@ -118,15 +129,18 @@ def add_bucket_item(user_id):
         return jsonify(success=False)
     return jsonify(success=True)
 
-@app.route("/user/<user_id>/bucket-item", methods=["PUT"])
-def update_bucket_item(user_id):
-    end_city = request.args.get('end_city')
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    duration = request.args.get('duration')
-    get_cursor().execute("UPDATE `bucket_items` SET `start_date`=%s, "
-        "`end_date`=%s, `duration`=%s WHERE `user_id`=%s AND `end_city`=%s", 
-        [start_date, end_date, duration, user_id, end_city])
+@app.route("/user/<user_id>/bucket-item/<end_city>", methods=["PUT", "DELETE"])
+def update_bucket_item(user_id, end_city):
+    if request.method == 'PUT':
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        duration = request.args.get('duration')
+        get_cursor().execute("UPDATE `bucket_items` SET `start_date`=%s, "
+            "`end_date`=%s, `duration`=%s WHERE `user_id`=%s AND `end_city`=%s", 
+            [start_date, end_date, duration, user_id, end_city])
+    else:
+        get_cursor().execute("DELETE FROM `bucket_items` WHERE `user_id`=%s "
+            "AND `end_city`=%s", [user_id, end_city])
     try:
         get_db().commit()
     except:
@@ -175,12 +189,16 @@ def calculate_price():
 city_to_airport = {}
 
 def get_airport_from_city(city):
+    if not city:
+        return None
     if city not in city_to_airport:
         response = requests.get("https://api.sandbox.amadeus.com/v1.2/airports/autocomplete?apikey=" + 
             app.config.get("AMADEUS_KEY") + "&term=" + city)
-        airport = response.json()[0]['value']
-        # TODO Check for invalid airport
-        city_to_airport[city] = airport
+        try:
+            airport = response.json()[0]['value']
+            city_to_airport[city] = airport
+        except:
+            return None
     return city_to_airport[city]
 
 def add_trip_duration(end_date, duration):
@@ -193,6 +211,9 @@ def subtract_trip_duration(end_date, duration):
 
 def calculate_best_price(start_airport, end_airport, start_date, end_date):
     # TODO Allow None values for the last 4
+    print("https://api.sandbox.amadeus.com/v1.2/flights/extensive-search?apikey=" + 
+        app.config.get("AMADEUS_KEY") + "&origin=" + start_airport + "&destination=" + end_airport + 
+        "&departure_date=" + start_date + "--" + end_date + "&one-way=true&aggregation_mode=DESTINATION")
     response = requests.get("https://api.sandbox.amadeus.com/v1.2/flights/extensive-search?apikey=" + 
         app.config.get("AMADEUS_KEY") + "&origin=" + start_airport + "&destination=" + end_airport + 
         "&departure_date=" + start_date + "--" + end_date + "&one-way=true&aggregation_mode=DESTINATION")

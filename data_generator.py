@@ -7,7 +7,7 @@ db = pymysql.connect(myConfig.MYSQL_DATABASE_HOST, myConfig.MYSQL_DATABASE_USER,
     myConfig.MYSQL_DATABASE_PASSWORD, myConfig.MYSQL_DATABASE_DB)
 cursor = db.cursor()
 
-num_users = 10000
+num_users = 1000
 cities = []
 for line in open("cities.csv", "r"):
   city, visitors = line.split(",")
@@ -41,8 +41,8 @@ for i in range(num_users):
     while trip_loc == user_loc:
       trip_loc = random.randint(0, len(cities) - 1)
 
-    start_range = (date.today() - relativedelta(years=2)).toordinal()
-    end_range = date.today().toordinal()
+    start_range = (date.today() + relativedelta(days=1)).toordinal()
+    end_range = (date.today() + relativedelta(months=6)).toordinal()
     day1 = date.fromordinal(random.randint(start_range, end_range))
     day2 = date.fromordinal(random.randint(start_range, end_range))
     start_date = day1 if day1 < day2 else day2
