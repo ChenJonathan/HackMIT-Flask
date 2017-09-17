@@ -38,8 +38,7 @@ def register():
             "(%s,%s)", [email, password])
         get_db().commit()
 
-        get_cursor().execute("SELECT `user_id` FROM `users` WHERE `email`=%s",
-            [email])
+        get_cursor().execute("SELECT `user_id` FROM `users` WHERE `email`=%s", [email])
         user_id = get_cursor().fetchone()[0]
         return jsonify(success=True, user_id=user_id)
     except:
@@ -51,28 +50,45 @@ def register():
 def login():
     email = request.args.get('email')
     password = request.args.get('password')
-    get_cursor().execute("SELECT `password` FROM `users` WHERE `email`=%s",
-        [email])
+    get_cursor().execute("SELECT `password` FROM `users` WHERE `email`=%s", [email])
     user_data = get_cursor().fetchone()
     if not user_data:
         return jsonify(success=False)
     elif user_data[0] != password:
         return jsonify(success=False)
 
-    get_cursor().execute("SELECT `user_id` FROM `users` WHERE `email`=%s",
-        [email])
+    get_cursor().execute("SELECT `user_id` FROM `users` WHERE `email`=%s", [email])
     user_id = get_cursor().fetchone()[0]
     return jsonify(success=True, user_id=user_id)
 
 @app.route("/user/<user_id>/bucket-list")
 def get_feed(user_id):
-    get_cursor().execute("SELECT * FROM `bucket_items` WHERE `user_id`=%s",
-        [user_id])
-    results = get_cursor().fetchall()
-    if not results:
-        success = False
-    # TODO Get price information
-    return jsonify(success=True, results=results)
+    get_cursor().execute("SELECT * FROM bucket_items WHERE `user_id`=%s", [user_id])
+    raw_results = get_cursor().fetchall()
+
+    get_cursor().execute("SELECT COLUMN_NAME FROM "
+        "INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = "
+        "'bucket_items'", [app.config.get('MYSQL_DATABASE_DB')])
+    keys = get_cursor().fetchall()
+
+    paired_results = []
+    for raw_result in raw_results:
+        paired_result = {}
+        for i in range(len(keys)):
+            paired_result[keys[i][0]] = raw_result[i]
+        paired_results.append(paired_result)
+    if not paired_results:
+        return jsonify(success=False)
+
+    get_cursor().execute("SELECT `location` FROM `users` WHERE `user_id`=%s", [user_id])
+    user_location = get_cursor().fetchone()[0]
+    for i in range(len(paired_results)):
+        start_airport = get_airport_from_city(user_location)
+        end_airport = get_airport_from_city(paired_results[i]['end_city'])
+        paired_results[i]['best_flight'] = calculate_best_price(start_airport, 
+            end_airport, paired_results[i]['start_date'], paired_results[i]['end_date'], 
+            paired_results[i]['min_duration'], paired_results[i]['max_duration'])
+    return jsonify(success=True, results=paired_results)
 
 @app.route("/user/<user_id>/bucket-item", methods=["POST"])
 def add_bucket_item(user_id):
@@ -82,8 +98,8 @@ def add_bucket_item(user_id):
     min_duration = request.args.get('min_duration')
     max_duration = request.args.get('max_duration')
 
-    get_cursor().execute("SELECT * FROM `bucket_items` WHERE `user_id`=%s AND "
-        "`end_city`=%s", [user_id, end_city])
+    get_cursor().execute("SELECT * FROM `bucket_items` WHERE `user_id`=%s " + 
+        "AND `end_city`=%s", [user_id, end_city])
     prev_item = get_cursor().fetchone()
     if prev_item:
         return jsonify(success=False)
@@ -147,14 +163,8 @@ def calculate_price():
     end_date = request.args.get('end_date')
     min_duration = request.args.get('min_duration')
     max_duration = request.args.get('max_duration')
-    response = requests.get("https://api.sandbox.amadeus.com/v1.2/flights/extensive-search?apikey=" + 
-        app.config.get("AMADEUS_KEY") + "&origin=" + start_airport + "&destination=" + end_airport + 
-        "&departure_date=" + start_date + "--" + end_date + "&duration=" + min_duration + "--" + max_duration)
-    try:
-        response = response.json()['results'][0]
-    except:
-        return jsonify(success=False)
-    return jsonify(success=True, results=response)
+    response = calculate_best_price(start_airport, end_airport, start_date, end_date, min_duration, max_duration)
+    return jsonify(success=True, results=response) if response else jsonify(success=False)
 
 
 #################
@@ -171,6 +181,17 @@ def get_airport_from_city(city):
         # TODO Check for invalid airport
         city_to_airport[city] = airport
     return city_to_airport[city]
+
+def calculate_best_price(start_airport, end_airport, start_date, end_date, min_duration, max_duration):
+    # TODO Allow None values for the last 4
+    response = requests.get("https://api.sandbox.amadeus.com/v1.2/flights/extensive-search?apikey=" + 
+        app.config.get("AMADEUS_KEY") + "&origin=" + start_airport + "&destination=" + end_airport + 
+        "&departure_date=" + start_date + "--" + end_date + "&duration=" + min_duration + "--" + max_duration)
+    try:
+        response = response.json()['results'][0]
+    except:
+        return None
+    return response
 
 
 ############
