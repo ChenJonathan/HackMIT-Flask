@@ -75,15 +75,22 @@ def get_feed(user_id):
     return jsonify(success=True, results=results)
 
 @app.route("/user/<user_id>/bucket-item", methods=["POST"])
-def get_bucket_item(user_id):
+def add_bucket_item(user_id):
     end_city = request.args.get('end_city')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     min_duration = request.args.get('min_duration')
     max_duration = request.args.get('max_duration')
+
+    get_cursor().execute("SELECT * FROM `bucket_items` WHERE `user_id`=%s AND "
+        "`end_city`=%s", [user_id, end_city])
+    prev_item = get_cursor().fetchone()
+    if prev_item:
+        return jsonify(success=False)
+
     get_cursor().execute("INSERT INTO `bucket_items` (user_id, end_city, "
         "start_date, end_date, min_duration, max_duration) VALUES(%s, %s, %s, "
-        "%s, %s, &s)", [user_id, end_city, start_date, end_date, min_duration,
+        "%s, %s, %s)", [user_id, end_city, start_date, end_date, min_duration,
         max_duration])
     try:
         get_db().commit()
@@ -99,9 +106,8 @@ def update_bucket_item(user_id):
     end_date = request.args.get('end_date')
     min_duration = request.args.get('min_duration')
     max_duration = request.args.get('max_duration')
-    # TODO Consider edge case where same city exists in bucket list twice
     get_cursor().execute("UPDATE `bucket_items` SET `start_date`=%s, `end_date`"
-        "=%s, `min_duration`=%s, `max_duration`=%s WHERE `user_id`=%s, "
+        "=%s, `min_duration`=%s, `max_duration`=%s WHERE `user_id`=%s AND "
         "`end_city`=%s", [start_date, end_date, min_duration, max_duration,
         user_id, end_city])
     try:
@@ -128,7 +134,7 @@ def get_info(city):
     response = requests.get("https://api.sandbox.amadeus.com/v1.2/points-of-"
         "interest/yapq-search-text?apikey=" + app.config.get("AMADEUS_KEY") +
         "&city_name=" + city)
-   response = response.json()["points_of_interest"]
+    response = response.json()["points_of_interest"]
 
     for i in range(len(response)):
         response[i] = response[i]["title"]
