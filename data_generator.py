@@ -1,7 +1,7 @@
 import pymysql, random
 from datetime import date
 from dateutil.relativedelta import relativedelta
-from config import DevelopmentConfig as myConfig
+from config import ProductionConfig as myConfig
 
 db = pymysql.connect(myConfig.MYSQL_DATABASE_HOST, myConfig.MYSQL_DATABASE_USER,
     myConfig.MYSQL_DATABASE_PASSWORD, myConfig.MYSQL_DATABASE_DB)
