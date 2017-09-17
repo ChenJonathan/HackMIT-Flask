@@ -230,6 +230,8 @@ def calculate_price_round_trip():
         subtract_trip_duration(end_date, duration))
     if response:
         list.append(response)
+    else:
+        return jsonify(success=False)
     return_day = add_trip_duration(response['departure_date'], duration)
     response = calculate_best_price(end_airport, start_airport, return_day, return_day)
     if response:
