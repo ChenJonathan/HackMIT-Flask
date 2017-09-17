@@ -77,66 +77,6 @@ def get_feed(user_id):
         return jsonify(success=False)
     return jsonify(success=True, results=results)
 
-@app.route("/user/<user_id>/recommendation")
-def get_recommendations(user_id):
-    get_cursor().execute("SELECT `end_city` FROM bucket_items WHERE `user_id`="
-        "%s", [user_id])
-    all_cities = [x[0] for x in get_cursor().fetchall()]
-    end_city = all_cities[0]
-
-    # Make sure the recommendation is for a new city
-    while end_city in all_cities:
-        end_city = random.sample(cities, 1)[0]
-
-    get_cursor().execute("SELECT `start_date`, `end_date`, `duration` FROM "
-        "bucket_items WHERE `user_id`=%s", [user_id])
-    raw_results = list(get_cursor().fetchone())
-
-    raw_results = [[user_id, end_city] + list(raw_results)]
-
-    results = process_raw_bucket_items(user_id, raw_results)
-    if not results:
-        return jsonify(success=False)
-    return jsonify(success=True, results=results)
-
-def process_raw_bucket_items(user_id, raw_results):
-    get_cursor().execute("SELECT COLUMN_NAME FROM "
-        "INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = "
-        "'bucket_items'", [app.config.get('MYSQL_DATABASE_DB')])
-    keys = get_cursor().fetchall()
-
-    results = []
-    for raw_result in raw_results:
-        result = {}
-        for i in range(len(keys)):
-            result[keys[i][0]] = raw_result[i]
-        results.append(result)
-
-    get_cursor().execute("SELECT `location` FROM `users` WHERE `user_id`=%s", [user_id])
-    user_location = get_cursor().fetchone()[0]
-    for i in range(len(results)):
-        start_airport = get_airport_from_city(user_location)
-        end_airport = get_airport_from_city(results[i]['end_city'])
-        if not end_airport:
-            continue
-
-        departure_flight = calculate_best_price(start_airport, 
-            end_airport, results[i]['start_date'], 
-            subtract_trip_duration(results[i]['end_date'], results[i]['duration']))
-        if not departure_flight:
-            continue
-        results[i]['departure_flight'] = departure_flight
-
-        return_day = add_trip_duration(results[i]['departure_flight']['departure_date'], 
-            results[i]['duration'])
-        return_flight = calculate_best_price(start_airport, 
-            end_airport, return_day, return_day)
-        if not return_flight:
-            del results[i]['departure_flight']
-            continue
-        results[i]['return_flight'] = return_flight
-    return results
-
 @app.route("/user/<user_id>/bucket-item", methods=["POST"])
 def add_bucket_item(user_id):
     end_city = request.args.get('end_city')
@@ -178,6 +118,83 @@ def update_bucket_item(user_id, end_city):
         db.rollback()
         return jsonify(success=False)
     return jsonify(success=True)
+
+@app.route("/user/<user_id>/recommendation")
+def get_recommendations(user_id):
+    get_cursor().execute("SELECT `end_city` FROM bucket_items WHERE `user_id`="
+        "%s", [user_id])
+    all_cities = [x[0] for x in get_cursor().fetchall()]
+    end_city = all_cities[0]
+
+    # Make sure the recommendation is for a new city
+    while end_city in all_cities:
+        end_city = random.sample(cities, 1)[0]
+
+    get_cursor().execute("SELECT `start_date`, `end_date`, `duration` FROM "
+        "bucket_items WHERE `user_id`=%s", [user_id])
+    raw_results = list(get_cursor().fetchone())
+
+    raw_results = [[user_id, end_city] + list(raw_results)]
+
+    results = process_raw_bucket_items(user_id, raw_results)
+    if not results:
+        return jsonify(success=False)
+    return jsonify(success=True, results=results)
+
+@app.route("/user/<user_id>/planning")
+def get_plan(user_id):
+    get_cursor().execute("SELECT `location` FROM `users` WHERE `user_id`=%s", [user_id])
+    user_location = get_cursor().fetchone()[0]
+    get_cursor().execute("SELECT * FROM bucket_items WHERE `user_id`="
+        "%s", [user_id])
+    all_items = process_raw_bucket_items(user_id, get_cursor().fetchall(), calculate_price=False)
+
+    def make_plan(stack, current_date):
+
+        # Hard cap at 3 cities
+        if len(stack) == 3:
+            trip = calculate_best_price(stack[-1]['destination'], user_location, 
+                current_date, current_date)
+            if trip:
+                stack.append(trip)
+                return True
+            else:
+                return False
+
+        for item in all_items:
+
+            # Avoid duplicate cities
+            skip = False
+            for trip in stack:
+                if item['end_city'] == trip['destination']:
+                    skip = True
+                    break
+            if skip:
+                continue
+
+            # Attempt to route to the city
+            current_location = stack[-1]['destination'] if len(stack) > 0 else user_location
+            trip = calculate_best_price(current_location, item['end_city'], current_date, current_date)
+            if trip:
+                stack.append(trip)
+                if make_plan(stack, add_trip_duration(current_date, item['duration'])):
+                    return True
+                stack.pop()
+        
+        # As a last resort, attempt to route back home
+        if len(stack) > 0:
+            trip = calculate_best_price(stack[-1]['destination'], user_location, 
+                current_date, current_date)
+            if trip:
+                stack.append(trip)
+                return True
+
+        return False
+
+    stack = []
+    current_date = add_trip_duration(str(datetime.date.today()), 30)
+    make_plan(stack, current_date)
+    return jsonify(success=False) if len(stack) == 0 else jsonify(success=True, results=stack)
 
 @app.route("/user/<user_id>/location", methods=["POST"])
 def set_location(user_id):
@@ -250,6 +267,47 @@ def calculate_best_price(start_airport, end_airport, start_date, end_date):
     except:
         return None
     return response
+
+def process_raw_bucket_items(user_id, raw_results, calculate_price=True):
+    get_cursor().execute("SELECT COLUMN_NAME FROM "
+        "INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = "
+        "'bucket_items'", [app.config.get('MYSQL_DATABASE_DB')])
+    keys = get_cursor().fetchall()
+
+    results = []
+    for raw_result in raw_results:
+        result = {}
+        for i in range(len(keys)):
+            result[keys[i][0]] = raw_result[i]
+        results.append(result)
+
+    if not calculate_price:
+        return results
+
+    get_cursor().execute("SELECT `location` FROM `users` WHERE `user_id`=%s", [user_id])
+    user_location = get_cursor().fetchone()[0]
+    for i in range(len(results)):
+        start_airport = get_airport_from_city(user_location)
+        end_airport = get_airport_from_city(results[i]['end_city'])
+        if not end_airport:
+            continue
+
+        departure_flight = calculate_best_price(start_airport, 
+            end_airport, results[i]['start_date'], 
+            subtract_trip_duration(results[i]['end_date'], results[i]['duration']))
+        if not departure_flight:
+            continue
+        results[i]['departure_flight'] = departure_flight
+
+        return_day = add_trip_duration(results[i]['departure_flight']['departure_date'], 
+            results[i]['duration'])
+        return_flight = calculate_best_price(start_airport, 
+            end_airport, return_day, return_day)
+        if not return_flight:
+            del results[i]['departure_flight']
+            continue
+        results[i]['return_flight'] = return_flight
+    return results
 
 
 ############
