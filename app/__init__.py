@@ -218,6 +218,24 @@ def get_info(city):
     success = True
     return jsonify(success=success, results=response)
 
+@app.route("/calculate-price-round-trip")
+def calculate_price_round_trip():
+    start_airport = get_airport_from_city(request.args.get('start_city'))
+    end_airport = get_airport_from_city(request.args.get('end_city'))
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    duration = request.args.get('duration')
+    list = []
+    response = calculate_best_price(start_airport, end_airport, start_date,
+        subtract_trip_duration(end_date, duration))
+    if response:
+        list.append(response)
+    return_day = add_trip_duration(response['departure_date'], duration)
+    response = calculate_best_price(end_airport, start_airport, return_day, return_day)
+    if response:
+        list.append(response)
+    return jsonify(success=True, results=list) if len(list) == 2 else jsonify(success=False)
+
 @app.route("/calculate-price")
 def calculate_price():
     start_airport = get_airport_from_city(request.args.get('start_city'))
@@ -301,8 +319,8 @@ def process_raw_bucket_items(user_id, raw_results, calculate_price=True):
 
         return_day = add_trip_duration(results[i]['departure_flight']['departure_date'], 
             results[i]['duration'])
-        return_flight = calculate_best_price(start_airport, 
-            end_airport, return_day, return_day)
+        return_flight = calculate_best_price(end_airport, start_airport, 
+            return_day, return_day)
         if not return_flight:
             del results[i]['departure_flight']
             continue
