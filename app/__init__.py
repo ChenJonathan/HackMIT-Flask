@@ -108,18 +108,44 @@ def set_location(user_id):
 def get_info(city):
     response = requests.get("https://api.sandbox.amadeus.com/v1.2/points-of-interest/yapq-search-text" + 
         "?apikey=" + app.config.get("AMADEUS_KEY") + "&city_name=" + city)
-    response = response.json()["points_of_interest"]
+    response = response.json()['points_of_interest']
     for i in range(len(response)):
-        response[i] = response[i]["title"]
+        response[i] = response[i]['title']
     success = True
     return jsonify(success=success, results=response)
 
-# TODO Authenticate user
-# start_city, end_city, start_date, end_date, min_duration, max_duration
 @app.route("/calculate-price")
 def calculate_price():
-    # TODO The thing
-    return jsonify(success=True)
+    start_airport = get_airport_from_city(request.args.get('start_city'))
+    end_airport = get_airport_from_city(request.args.get('end_city'))
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    min_duration = request.args.get('min_duration')
+    max_duration = request.args.get('max_duration')
+    response = requests.get("https://api.sandbox.amadeus.com/v1.2/flights/extensive-search?apikey=" + 
+        app.config.get("AMADEUS_KEY") + "&origin=" + start_airport + "&destination=" + end_airport + 
+        "&departure_date=" + start_date + "--" + end_date + "&duration=" + min_duration + "--" + max_duration)
+    try:
+        response = response.json()['results'][0]
+    except:
+        return jsonify(success=False)
+    return jsonify(success=True, results=response)
+
+
+#################
+# Miscellaneous #
+#################
+
+city_to_airport = {}
+
+def get_airport_from_city(city):
+    if city not in city_to_airport:
+        response = requests.get("https://api.sandbox.amadeus.com/v1.2/airports/autocomplete?apikey=" + 
+            app.config.get("AMADEUS_KEY") + "&term=" + city)
+        airport = response.json()[0]['value']
+        # TODO Check for invalid airport
+        city_to_airport[city] = airport
+    return city_to_airport[city]
 
 
 ############
