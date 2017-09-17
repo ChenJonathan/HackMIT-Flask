@@ -2,6 +2,7 @@
 # Imports #
 ###########
 
+import datetime
 from flask import Flask, render_template, jsonify, request, g, redirect, url_for
 from flask.ext.mysql import MySQL
 import requests
@@ -85,9 +86,13 @@ def get_feed(user_id):
     for i in range(len(paired_results)):
         start_airport = get_airport_from_city(user_location)
         end_airport = get_airport_from_city(paired_results[i]['end_city'])
-        paired_results[i]['best_flight'] = calculate_best_price(start_airport, 
-            end_airport, paired_results[i]['start_date'], paired_results[i]['end_date'], 
-            paired_results[i]['min_duration'], paired_results[i]['max_duration'])
+        paired_results[i]['departure_flight'] = calculate_best_price(start_airport, 
+            end_airport, paired_results[i]['start_date'], 
+            subtract_trip_duration(paired_results[i]['end_date'], paired_results[i]['duration']))
+        return_day = add_trip_duration(paired_results[i]['departure_flight']['departure_date'], 
+            paired_results[i]['duration'])
+        paired_results[i]['return_flight'] = calculate_best_price(start_airport, 
+            end_airport, return_day, return_day)
     return jsonify(success=True, results=paired_results)
 
 @app.route("/user/<user_id>/bucket-item", methods=["POST"])
@@ -95,8 +100,7 @@ def add_bucket_item(user_id):
     end_city = request.args.get('end_city')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    min_duration = request.args.get('min_duration')
-    max_duration = request.args.get('max_duration')
+    duration = request.args.get('duration')
 
     get_cursor().execute("SELECT * FROM `bucket_items` WHERE `user_id`=%s " + 
         "AND `end_city`=%s", [user_id, end_city])
@@ -105,9 +109,8 @@ def add_bucket_item(user_id):
         return jsonify(success=False)
 
     get_cursor().execute("INSERT INTO `bucket_items` (user_id, end_city, "
-        "start_date, end_date, min_duration, max_duration) VALUES(%s, %s, %s, "
-        "%s, %s, %s)", [user_id, end_city, start_date, end_date, min_duration,
-        max_duration])
+        "start_date, end_date, duration) VALUES(%s, %s, %s, %s, %s)", 
+        [user_id, end_city, start_date, end_date, duration])
     try:
         get_db().commit()
     except:
@@ -120,12 +123,10 @@ def update_bucket_item(user_id):
     end_city = request.args.get('end_city')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    min_duration = request.args.get('min_duration')
-    max_duration = request.args.get('max_duration')
-    get_cursor().execute("UPDATE `bucket_items` SET `start_date`=%s, `end_date`"
-        "=%s, `min_duration`=%s, `max_duration`=%s WHERE `user_id`=%s AND "
-        "`end_city`=%s", [start_date, end_date, min_duration, max_duration,
-        user_id, end_city])
+    duration = request.args.get('duration')
+    get_cursor().execute("UPDATE `bucket_items` SET `start_date`=%s, "
+        "`end_date`=%s, `duration`=%s WHERE `user_id`=%s AND `end_city`=%s", 
+        [start_date, end_date, duration, user_id, end_city])
     try:
         get_db().commit()
     except:
@@ -161,9 +162,9 @@ def calculate_price():
     end_airport = get_airport_from_city(request.args.get('end_city'))
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    min_duration = request.args.get('min_duration')
-    max_duration = request.args.get('max_duration')
-    response = calculate_best_price(start_airport, end_airport, start_date, end_date, min_duration, max_duration)
+    duration = request.args.get('duration')
+    response = calculate_best_price(start_airport, end_airport, start_date, 
+        subtract_trip_duration(end_date, duration))
     return jsonify(success=True, results=response) if response else jsonify(success=False)
 
 
@@ -182,12 +183,21 @@ def get_airport_from_city(city):
         city_to_airport[city] = airport
     return city_to_airport[city]
 
-def calculate_best_price(start_airport, end_airport, start_date, end_date, min_duration, max_duration):
+def add_trip_duration(end_date, duration):
+    end_date = datetime.date(int(end_date[:4]), int(end_date[5:7]), int(end_date[8:10]))
+    return str(end_date + datetime.timedelta(days=int(duration)))
+
+def subtract_trip_duration(end_date, duration):
+    end_date = datetime.date(int(end_date[:4]), int(end_date[5:7]), int(end_date[8:10]))
+    return str(end_date - datetime.timedelta(days=int(duration)))
+
+def calculate_best_price(start_airport, end_airport, start_date, end_date):
     # TODO Allow None values for the last 4
     response = requests.get("https://api.sandbox.amadeus.com/v1.2/flights/extensive-search?apikey=" + 
         app.config.get("AMADEUS_KEY") + "&origin=" + start_airport + "&destination=" + end_airport + 
-        "&departure_date=" + start_date + "--" + end_date + "&duration=" + min_duration + "--" + max_duration)
+        "&departure_date=" + start_date + "--" + end_date + "&one-way=true&aggregation_mode=DESTINATION")
     try:
+        print(response.text)
         response = response.json()['results'][0]
     except:
         return None
