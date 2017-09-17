@@ -25,11 +25,11 @@ else:
 
 mysql = MySQL()
 mysql.init_app(app)
-    
+
 cities = []
 for line in open("cities.csv", "r"):
   city, visitors = line.split(",")
-  cities.append([city])
+  cities.append(city)
 
 
 #############
@@ -82,20 +82,20 @@ def get_feed(user_id):
 def get_recommendations(user_id):
     get_cursor().execute("SELECT `end_city` FROM bucket_items WHERE `user_id`="
         "%s", [user_id])
-    all_cities = get_cursor.fetchall()
-    print(all_cities)
+    all_cities = [x[0] for x in get_cursor().fetchall()]
     end_city = all_cities[0]
 
     # Make sure the recommendation is for a new city
-    while end_city not in all_cities:
-        end_city = random.sample(range(len(cities)), 1)[0]
+    while end_city in all_cities:
+        end_city = random.sample(cities, 1)[0]
 
-    get_cursor().execute("SELECT `start_date, end_date, duration` FROM "
+    print(end_city)
+
+    get_cursor().execute("SELECT `start_date`, `end_date`, `duration` FROM "
         "bucket_items WHERE `user_id`=%s", [user_id])
-    raw_results = [get_cursor().fetchone()]
+    raw_results = list(get_cursor().fetchone())
 
-    raw_results = [user_id, end_city] + raw_results
-    print(raw_results)
+    raw_results = [[user_id, end_city] + list(raw_results)]
 
     results = process_raw_bucket_items(raw_results)
     if not results:
@@ -111,6 +111,8 @@ def process_raw_bucket_items(raw_results):
     results = []
     for raw_result in raw_results:
         result = {}
+        print(keys)
+        print(raw_result)
         for i in range(len(keys)):
             result[keys[i][0]] = raw_result[i]
         results.append(result)
@@ -121,12 +123,12 @@ def process_raw_bucket_items(raw_results):
     for i in range(len(results)):
         start_airport = get_airport_from_city(user_location)
         end_airport = get_airport_from_city(results[i]['end_city'])
-        results[i]['departure_flight'] = calculate_best_price(start_airport, 
-            end_airport, results[i]['start_date'], 
+        results[i]['departure_flight'] = calculate_best_price(start_airport,
+            end_airport, results[i]['start_date'],
             subtract_trip_duration(results[i]['end_date'], results[i]['duration']))
-        return_day = add_trip_duration(results[i]['departure_flight']['departure_date'], 
+        return_day = add_trip_duration(results[i]['departure_flight']['departure_date'],
             results[i]['duration'])
-        results[i]['return_flight'] = calculate_best_price(start_airport, 
+        results[i]['return_flight'] = calculate_best_price(start_airport,
             end_airport, return_day, return_day)
     return results
 
@@ -137,14 +139,14 @@ def add_bucket_item(user_id):
     end_date = request.args.get('end_date')
     duration = request.args.get('duration')
 
-    get_cursor().execute("SELECT * FROM `bucket_items` WHERE `user_id`=%s " + 
+    get_cursor().execute("SELECT * FROM `bucket_items` WHERE `user_id`=%s " +
         "AND `end_city`=%s", [user_id, end_city])
     prev_item = get_cursor().fetchone()
     if prev_item:
         return jsonify(success=False)
 
     get_cursor().execute("INSERT INTO `bucket_items` (user_id, end_city, "
-        "start_date, end_date, duration) VALUES(%s, %s, %s, %s, %s)", 
+        "start_date, end_date, duration) VALUES(%s, %s, %s, %s, %s)",
         [user_id, end_city, start_date, end_date, duration])
     try:
         get_db().commit()
@@ -160,7 +162,7 @@ def update_bucket_item(user_id):
     end_date = request.args.get('end_date')
     duration = request.args.get('duration')
     get_cursor().execute("UPDATE `bucket_items` SET `start_date`=%s, "
-        "`end_date`=%s, `duration`=%s WHERE `user_id`=%s AND `end_city`=%s", 
+        "`end_date`=%s, `duration`=%s WHERE `user_id`=%s AND `end_city`=%s",
         [start_date, end_date, duration, user_id, end_city])
     try:
         get_db().commit()
@@ -183,7 +185,7 @@ def set_location(user_id):
 
 @app.route("/location/<city>")
 def get_info(city):
-    response = requests.get("https://api.sandbox.amadeus.com/v1.2/points-of-interest/yapq-search-text" + 
+    response = requests.get("https://api.sandbox.amadeus.com/v1.2/points-of-interest/yapq-search-text" +
         "?apikey=" + app.config.get("AMADEUS_KEY") + "&city_name=" + city)
     response = response.json()['points_of_interest']
     for i in range(len(response)):
@@ -198,7 +200,7 @@ def calculate_price():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     duration = request.args.get('duration')
-    response = calculate_best_price(start_airport, end_airport, start_date, 
+    response = calculate_best_price(start_airport, end_airport, start_date,
         subtract_trip_duration(end_date, duration))
     return jsonify(success=True, results=response) if response else jsonify(success=False)
 
@@ -211,7 +213,7 @@ city_to_airport = {}
 
 def get_airport_from_city(city):
     if city not in city_to_airport:
-        response = requests.get("https://api.sandbox.amadeus.com/v1.2/airports/autocomplete?apikey=" + 
+        response = requests.get("https://api.sandbox.amadeus.com/v1.2/airports/autocomplete?apikey=" +
             app.config.get("AMADEUS_KEY") + "&term=" + city)
         airport = response.json()[0]['value']
         # TODO Check for invalid airport
@@ -228,8 +230,8 @@ def subtract_trip_duration(end_date, duration):
 
 def calculate_best_price(start_airport, end_airport, start_date, end_date):
     # TODO Allow None values for the last 4
-    response = requests.get("https://api.sandbox.amadeus.com/v1.2/flights/extensive-search?apikey=" + 
-        app.config.get("AMADEUS_KEY") + "&origin=" + start_airport + "&destination=" + end_airport + 
+    response = requests.get("https://api.sandbox.amadeus.com/v1.2/flights/extensive-search?apikey=" +
+        app.config.get("AMADEUS_KEY") + "&origin=" + start_airport + "&destination=" + end_airport +
         "&departure_date=" + start_date + "--" + end_date + "&one-way=true&aggregation_mode=DESTINATION")
     try:
         print(response.text)
@@ -249,7 +251,7 @@ def get_db():
     """
     if not hasattr(g, 'mysql_db'):
         g.mysql_db = mysql.connect()
-    
+
     return g.mysql_db
 
 def get_cursor():
