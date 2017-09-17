@@ -2,8 +2,8 @@
 # Imports #
 ###########
 from flask import Flask, render_template, jsonify, request, g, redirect, url_for
-from flask_login import login_required, current_user
 from flask.ext.mysql import MySQL
+import requests
 import os
 
 
@@ -25,59 +25,99 @@ mysql.init_app(app)
 # Endpoints #
 #############
 
-# email, password
 @app.route("/register", methods=["POST"])
 def register():
-    success = True
-    """EXAMPLE SQL CODE
-    getCursor().execute("UPDATE `users` SET `username`=%s,`email`=%s",
-        [request.form.get('username'), request.form.get('email')])
-    getDB.commit()"""
-    return jsonify(success=success)
+    email = request.form.get('email')
+    password = request.form.get('password')
+    get_cursor().execute("UPDATE `users` SET `email`=%s,`password`=%s", [email, password])
+    try:
+        get_db.commit()
+    except:
+        db.rollback()
+        return jsonify(success=False)
+    return jsonify(success=True)
 
-# email, password
+# TODO Authenticate user
 @app.route("/login", methods=["POST"])
 def login():
-    success = True
-    """EXAMPLE SQL CODE
-    getCursor().execute("UPDATE `users` SET `username`=%s,`email`=%s",
-        [request.form.get('username'), request.form.get('email')])
-    getDB.commit()"""
-    return jsonify(success=success)
+    email = request.form.get('email')
+    password = request.form.get('password')
+    get_cursor().execute("SELECT * FROM `users` WHERE `email`=%s,`password`=%s", [email, password])
+    if not get_cursor().fetchall():
+        success = False
+    return jsonify(success=True)
 
+# TODO Authenticate user
 @app.route("/user/<user_id>/bucket-list")
 def get_feed(user_id):
-    success = True
-    return jsonify(success=success)
+    get_cursor().execute("SELECT * FROM `bucket_items` WHERE `user_id`=%s", [user_id])
+    results = get_cursor.fetchall()
+    if not results:
+        success = False
+    # TODO Get price information
+    return jsonify(success=True, results=results)
 
-# end_city, start_date, end_date, min_duration, max_duration
+# TODO Authenticate user
 @app.route("/user/<user_id>/bucket-item", methods=["POST"])
 def get_bucket_item(user_id):
-    success = True
-    return jsonify(success=success)
+    end_city = request.form.get('end_city')
+    start_date = request.form.get('start_date')
+    end_date = request.form.get('end_date')
+    min_duration = request.form.get('min_duration')
+    max_duration = request.form.get('max_duration')
+    get_cursor().execute("INSERT INTO `bucket_items` (user_id, end_city, start_date, end_date, min_duration, max_duration)" + 
+        "VALUES(%s, %s, %s, %s, %s, &s)", [user_id, end_city, start_date, end_date, min_duration, max_duration])
+    try:
+        get_db.commit()
+    except:
+        db.rollback()
+        return jsonify(success=False)
+    return jsonify(success=True)
 
-# end_city, start_date, end_date, min_duration, max_duration
+# TODO Authenticate user
 @app.route("/user/<user_id>/bucket-item", methods=["PUT"])
 def update_bucket_item(user_id):
-    success = True
-    return jsonify(success=success)
+    end_city = request.form.get('end_city')
+    start_date = request.form.get('start_date')
+    end_date = request.form.get('end_date')
+    min_duration = request.form.get('min_duration')
+    max_duration = request.form.get('max_duration')
+    # TODO Consider edge case where same city exists in bucket list twice
+    get_cursor().execute("UPDATE `bucket_items` SET `start_date`=%s, `end_date`=%s, `min_duration`=%s, `max_duration`=%s " + 
+        "WHERE `user_id`=%s, `end_city`=%s", [start_date, end_date, min_duration, max_duration, user_id, end_city])
+    try:
+        get_db.commit()
+    except:
+        db.rollback()
+        return jsonify(success=False)
+    return jsonify(success=True)
 
-# location
+# TODO Authenticate user
 @app.route("/user/<user_id>/location", methods=["POST"])
 def set_location(user_id):
-    success = True
-    return jsonify(success=success)
+    location = request.form.get('location')
+    get_cursor().execute("UPDATE `users` SET `location`=%s WHERE `user_id`=%s", [location, user_id])
+    try:
+        get_db.commit()
+    except:
+        db.rollback()
+        return jsonify(success=False)
+    return jsonify(success=True)
 
 @app.route("/location/<city>")
 def get_info(city):
+    response = requests.get("https://api.sandbox.amadeus.com/v1.2/points-of-interest/yapq-search-text" + 
+        "?apikey=" + app.config.get("AMADEUS_KEY") + "&city_name=" + city)
+    
     success = True
-    return jsonify(success=success)
+    return jsonify(success=success, results=response.text)
 
+# TODO Authenticate user
 # start_city, end_city, start_date, end_date, min_duration, max_duration
 @app.route("/calculate-price")
 def calculate_price():
-    success = True
-    return jsonify(success=success)
+    # TODO The thing
+    return jsonify(success=True)
 
 
 ############
