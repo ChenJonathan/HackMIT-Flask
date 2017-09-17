@@ -128,9 +128,13 @@ def get_info(city):
     response = requests.get("https://api.sandbox.amadeus.com/v1.2/points-of-"
         "interest/yapq-search-text?apikey=" + app.config.get("AMADEUS_KEY") +
         "&city_name=" + city)
-    
+   response = response.json()["points_of_interest"]
+
+    for i in range(len(response)):
+        response[i] = response[i]["title"]
+
     success = True
-    return jsonify(success=success, results=response.text)
+    return jsonify(success=success, results=response)
 
 # start_city, end_city, start_date, end_date, min_duration, max_duration
 @app.route("/calculate-price")
