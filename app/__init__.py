@@ -8,6 +8,7 @@ from flask.ext.mysql import MySQL
 import requests
 import os
 import traceback
+import random
 
 
 #########
@@ -24,6 +25,11 @@ else:
 
 mysql = MySQL()
 mysql.init_app(app)
+    
+cities = []
+for line in open("cities.csv", "r"):
+  city, visitors = line.split(",")
+  cities.append([city])
 
 
 #############
@@ -67,33 +73,62 @@ def get_feed(user_id):
     get_cursor().execute("SELECT * FROM bucket_items WHERE `user_id`=%s", [user_id])
     raw_results = get_cursor().fetchall()
 
+    results = process_raw_bucket_items(raw_results)
+    if not results:
+        return jsonify(success=False)
+    return jsonify(success=True, results=results)
+
+@app.route("/user/<user_id>/recommendation")
+def get_recommendations(user_id):
+    get_cursor().execute("SELECT `end_city` FROM bucket_items WHERE `user_id`="
+        "%s", [user_id])
+    all_cities = get_cursor.fetchall()
+    print(all_cities)
+    end_city = all_cities[0]
+
+    # Make sure the recommendation is for a new city
+    while end_city not in all_cities:
+        end_city = random.sample(range(len(cities)), 1)[0]
+
+    get_cursor().execute("SELECT `start_date, end_date, duration` FROM "
+        "bucket_items WHERE `user_id`=%s", [user_id])
+    raw_results = [get_cursor().fetchone()]
+
+    raw_results = [user_id, end_city] + raw_results
+    print(raw_results)
+
+    results = process_raw_bucket_items(raw_results)
+    if not results:
+        return jsonify(success=False)
+    return jsonify(success=True, results=results)
+
+def process_raw_bucket_items(raw_results):
     get_cursor().execute("SELECT COLUMN_NAME FROM "
         "INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = "
         "'bucket_items'", [app.config.get('MYSQL_DATABASE_DB')])
     keys = get_cursor().fetchall()
 
-    paired_results = []
+    results = []
     for raw_result in raw_results:
-        paired_result = {}
+        result = {}
         for i in range(len(keys)):
-            paired_result[keys[i][0]] = raw_result[i]
-        paired_results.append(paired_result)
-    if not paired_results:
-        return jsonify(success=False)
+            result[keys[i][0]] = raw_result[i]
+        results.append(result)
+    return results
 
     get_cursor().execute("SELECT `location` FROM `users` WHERE `user_id`=%s", [user_id])
     user_location = get_cursor().fetchone()[0]
-    for i in range(len(paired_results)):
+    for i in range(len(results)):
         start_airport = get_airport_from_city(user_location)
-        end_airport = get_airport_from_city(paired_results[i]['end_city'])
-        paired_results[i]['departure_flight'] = calculate_best_price(start_airport, 
-            end_airport, paired_results[i]['start_date'], 
-            subtract_trip_duration(paired_results[i]['end_date'], paired_results[i]['duration']))
-        return_day = add_trip_duration(paired_results[i]['departure_flight']['departure_date'], 
-            paired_results[i]['duration'])
-        paired_results[i]['return_flight'] = calculate_best_price(start_airport, 
+        end_airport = get_airport_from_city(results[i]['end_city'])
+        results[i]['departure_flight'] = calculate_best_price(start_airport, 
+            end_airport, results[i]['start_date'], 
+            subtract_trip_duration(results[i]['end_date'], results[i]['duration']))
+        return_day = add_trip_duration(results[i]['departure_flight']['departure_date'], 
+            results[i]['duration'])
+        results[i]['return_flight'] = calculate_best_price(start_airport, 
             end_airport, return_day, return_day)
-    return jsonify(success=True, results=paired_results)
+    return results
 
 @app.route("/user/<user_id>/bucket-item", methods=["POST"])
 def add_bucket_item(user_id):
